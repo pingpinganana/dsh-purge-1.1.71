@@ -293,10 +293,9 @@
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
       disabled: false
-
-    - id: tool-subagent-list-agents
-      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-      disabled: false
+      # 0.2.2 把 list_agents / send_message / interrupt_agent 全并进主包了，
+      # 旧的 `@deepseek-ai/dsh-tool-subagent-control/list-agents` 子路径已不存在
+      # （包 exports 只有 "."），单挂那行会 never started 并拖垮整个预设。
 
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'

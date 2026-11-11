@@ -38,7 +38,7 @@
 | 1 | `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"; registered variables: provider, model` | 宿主 0.2.1 起只注册 `provider` / `model`，插值遇到未知变量直接硬失败；而插件 bundle 把 `{{cwd}}` 写进了 `personaSuffix` |
 | 2 | `dsh-purge失败: 清洗没有写进全部宿主，已取消重启` | 宿主 assemble 段新增 `requiredContexts` 与带 `tools` 的 early return，补丁 #40 的 6 条 pattern 全部失配 → inject marker 写不进去 → 重启闸门 `ensureHostClean()` 拦下 |
 | 3 | 点一次「检查更新」后又变回坏版 | fork 后 `package.json` 已指向本仓库，但 `lib/update.js`、欢迎页链接、发布 workflow、README 里的命令仍硬编码上游 `ZXEB/dsh-purge` |
-| 4 | 红队模式在下拉里看着正常，选中后派活全废（`preset-declare.json` 显示 `registered-broken`） | 宿主 0.2.1 起 `dsh-tool-subagent` 拒绝 `toolFilter` / `persona`，旧写法直接抛错，整个预设被标 broken |
+| 4 | 红队模式在下拉里看着正常，选中后派活全废（`preset-declare.json` 显示 `registered-broken`） | 宿主 0.2.1 起 `dsh-tool-subagent` 拒绝 `toolFilter` / `persona`，旧写法直接抛错；0.2.2 还把 `list_agents` 并进主包，旧的 `.../tool-subagent-control/list-agents` 子路径行会 `never started`。任一条都会让整个预设被标 broken |
 
 症状 1 让用户完全没法对话，症状 2 让「清洗 → 应用」永远卡在闸门上，症状 3 会让前两个修复被一次更新悄悄覆盖，症状 4 让红队模式「看得见、用不了」。
 

@@ -80,8 +80,82 @@ const flattenRows = (rows) => {
 const rowNamed = (definition, suffix) =>
   flattenRows(definition.plugins).filter((row) => String(row.name || '').endsWith(suffix))
 
+/**
+ * Package subpaths that no longer resolve. A row pointing at one of these throws
+ * "never started", which takes down the whole group AND the preset with it —
+ * and because the preset is then filtered from the dropdown, it looks like the
+ * mode "disappeared" rather than failed.
+ */
+const RETIRED_SUBPATHS = new Map([
+  [
+    '@deepseek-ai/dsh-tool-subagent-control/list-agents',
+    '0.2.2 merged list_agents into the main package; its exports no longer include this subpath',
+  ],
+])
+
+const hostIdx = process.argv.indexOf('--host')
+const hostModules = hostIdx > 0 ? process.argv[hostIdx + 1] : null
+
+/** Keys of a package's `exports` map, or null when it has none (path resolution applies). */
+const exportKeys = (pkgDir) => {
+  try {
+    const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+    const exp = pkg.exports
+    if (typeof exp === 'string') return new Set(['.'])
+    if (!exp || typeof exp !== 'object') return null
+    return new Set(Object.keys(exp))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Why a row's `name` cannot be resolved, or null when it looks fine.
+ * Mirrors what the Loader does at mount: a bare package must be installed and a
+ * subpath must appear in its `exports`, otherwise the row fails with
+ * "never started" — and one such row marks the whole preset broken.
+ */
+const resolveRow = (name, presetDir) => {
+  const text = String(name || '')
+  if (!text || text.startsWith('cordis:')) return null
+  if (text.startsWith('./') || text.startsWith('../')) {
+    const abs = join(presetDir, text)
+    return existsSync(abs) ? null : `relative module not found: ${abs}`
+  }
+  if (text.startsWith('@deepseek-ai/')) {
+    if (!hostModules) return null
+    const parts = text.split('/')
+    const pkgName = parts.slice(0, 2).join('/')
+    const sub = parts.length > 2 ? './' + parts.slice(2).join('/') : '.'
+    const pkgDir = join(hostModules, pkgName)
+    if (!existsSync(pkgDir)) return `package not installed: ${pkgName}`
+    const keys = exportKeys(pkgDir)
+    if (sub !== '.' && keys && !keys.has(sub)) {
+      return `subpath "${sub}" is not in ${pkgName} exports (rows like this fail with "never started")`
+    }
+    return null
+  }
+  if (text === 'dsh-purge' || text.startsWith('dsh-purge/')) {
+    const sub = text === 'dsh-purge' ? '.' : './' + text.slice('dsh-purge/'.length)
+    const keys = exportKeys(root)
+    if (sub !== '.' && keys && !keys.has(sub)) return `subpath "${sub}" is not in dsh-purge exports`
+    return null
+  }
+  return null
+}
+
 for (const [id, definition] of definitions) {
   const text = rawText.get(id)
+  const presetDir = join(presetsDir, id)
+  for (const row of flattenRows(definition.plugins)) {
+    const why = RETIRED_SUBPATHS.get(String(row.name || ''))
+    if (why) {
+      check(false, `${id}: row "${row.id}" points at a retired package path`, `${row.name} — ${why}`)
+    }
+    if (row.disabled === true) continue
+    const problem = resolveRow(row.name, presetDir)
+    if (problem) check(false, `${id}: row "${row.id}" cannot resolve`, problem)
+  }
   check(!/^\s*toolFilter:/m.test(text), `${id}: no toolFilter (host 0.2.1+ rejects it)`)
   check(!/^\s*persona:\s*$/m.test(text.split('- id: tool-subagent')[1]?.split('- id: ')[0] || ''),
     `${id}: no persona on the tool-subagent row`)

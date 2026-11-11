@@ -41,6 +41,7 @@ broken**（下拉里仍显示，选中后派活全废）。1.1.71 的红队预�
 | 新增官方 `unrestricted` 预设（移植自社区仓库，按 0.2.1+ 机制改造，`order: 20`） | `presets/unrestricted/` |
 | 插件改为多预设：`bundledPresetIds()` 扫 `presets/`，`installPreset({ id })` 逐个落盘，`registerAll()` 全部注册并逐个回查 `broken`，状态写进 `preset-declare.json` 的 `presets` 数组 | `lib/redteam/index.js` |
 | 自愈：已存在的用户预设里的 `toolFilter` 块就地换成子预设写法（按缩进扫描，块后即使没有空行也不会误删下一行） | `lib/redteam/index.js` 的 `repairSubagentToolFilter()` |
+| 自愈：删掉已废弃的 `@deepseek-ai/dsh-tool-subagent-control/list-agents` 行 —— 0.2.2 把 `list_agents` / `send_message` / `interrupt_agent` 并进了 `@deepseek-ai/dsh-tool-subagent-control` 主包，该子路径已不在 `exports` 里，单挂会 `never started` 并拖垮整个预设 | `presets/redteam`、`presets/unrestricted`、`lib/redteam/index.js` 的 `dropToolRow()` |
 | 只读校验：四份预设是否可解析、`toolFilter` 是否清零、`agentPreset` 是否已声明、子预设是否真的没有委派工具 | `scripts/verify-presets.mjs` |
 
 四个预设及定位：

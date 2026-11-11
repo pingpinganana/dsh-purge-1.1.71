@@ -25,13 +25,60 @@
 
 ---
 
-> **This fork carries the 0.2.1+ host compatibility hotfix (v1.1.71-hotfix).** Upstream 1.1.71 fails on DeepSeek Harness 0.2.1+ with `unknown prompt variable "{{cwd}}"`, and patch #40 no longer matches the assemble block, which triggers "cleaning was not written to all hosts, restart cancelled". Both are fixed here; update checks and install sources now point at this repository.
->
-> **Install only from this repository's tarball** (commands below are updated). Pointing at `ZXEB/dsh-purge` pulls the unfixed original back in. See [`docs/HOTFIX-1.1.71.md`](docs/HOTFIX-1.1.71.md) for the change list, verification and rollback.
+<a id="hotfix"></a>
 
+## What this fork fixes (v1.1.71-hotfix)
+
+> In short: upstream 1.1.71 **cannot complete a single turn** on DeepSeek Harness 0.2.1+, and its Clean step always cancels the restart. This fork fixes only those compatibility failures — **no new features, no new payloads, no changes to the model, its weights, or `reasoningEffort`**.
+
+### The three symptoms you would hit
+
+| # | Symptom (verbatim) | Root cause |
+|---|---|---|
+| 1 | `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"; registered variables: provider, model` | Host 0.2.1+ registers only `provider` / `model` and hard-fails on unknown template variables, while the plugin bundle writes `{{cwd}}` into `personaSuffix` |
+| 2 | `dsh-purge failed: cleaning was not written to all hosts, restart cancelled` | The host assemble block gained `requiredContexts` and a `tools` early return, so all 6 patterns of patch #40 miss → inject marker is never written → the `ensureHostClean()` gate blocks the restart |
+| 3 | One "check for updates" silently brings the broken build back | After forking, `package.json` points here, but `lib/update.js`, the welcome links, the release workflow and the README commands still hard-code upstream `ZXEB/dsh-purge` |
+
+Symptom 1 makes every turn fail, symptom 2 makes Clean → Apply a dead end, and symptom 3 quietly undoes both fixes.
+
+### What changed
+
+| Fix | Files |
+|---|---|
+| Remove `{{cwd}}` (static text `the session workspace root`) and narrow `DSH_INTERPOLATE_ALLOWED` from `cwd/model/provider` to `model/provider`, so the stale variable can no longer slip through | `cordis.patch.yml`, `lib/identity.js`, `lib/core.js`, `presets/redteam/agent.cordis.yml` |
+| Add `replacements[0]` to patch #40, matching the 0.2.1+ assemble source exactly: keeps the official `tools` / `requiredContexts` semantics and writes back the `[dsh-purge] complete prompt keeps inject + agent-instructions` marker. **The original 6 patterns remain after it** (first match wins), so 0.2.0-rc.2 stays supported | `lib/core.js` |
+| Align the restart gate with upstream 1.2.1: allow soft-skip / pattern-miss with `warnings`, still block on real `failed` / `read_error` or a missing apply report | `lib/core.js` |
+| Point update source, install source, welcome links and release guard at this repository | `lib/update.js`, `client.js`, `lib/redteam/ui.js`, `.github/workflows/release.yml`, all three READMEs |
+
+Upstream fixed `{{cwd}}` in plugin **1.2.0** and the restart gate in **1.2.1**; this is the equivalent fix backported onto **1.1.71**, without pulling in any other upstream change. `package.json` still says `1.1.71` to avoid spurious version comparisons.
+
+### After the fix you should see
+
+- A new conversation replies normally — no more `unknown prompt variable` on every turn.
+- Clean → Apply completes and restarts instead of showing "restart cancelled".
+- "Check for updates" only fetches from this repository, so the hotfix cannot be overwritten by upstream.
+
+### Verify it yourself
+
+```bash
+node --check lib/core.js
+node --check lib/identity.js
+node scripts/verify-hotfix.mjs
+# also simulate the patch against the real host (adjust the path)
+node scripts/verify-hotfix.mjs --host "<DSH install>/resources/app/dsh/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js"
+```
+
+Read-only; the host is not modified. Re-run after a host upgrade to check whether patch #40 still matches.
+
+### Activation order (required)
+
+The plugin is loaded into memory **at host startup** — the hotfix changes plugin source, not the running process: **quit DeepSeek Harness completely from the tray** (closing the window is not enough; check for leftover processes) → install from this repository's tarball → reopen → Clean → **Apply** → automatic restart → **start a new conversation** (old sessions keep the old context).
+
+**Install only from this repository** (the commands below are already updated). Pointing at `ZXEB/dsh-purge` reinstalls the unfixed original. Full change list, verification and rollback: [`docs/HOTFIX-1.1.71.md`](docs/HOTFIX-1.1.71.md).
 
 ## Contents
 
+- [What this fork fixes](#hotfix)
 - [1. What this is](#1-what-this-is)
 - [2. Feature overview](#2-feature-overview)
 - [3. Requirements](#3-requirements)

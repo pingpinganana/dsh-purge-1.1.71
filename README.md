@@ -25,13 +25,60 @@
 
 ---
 
-> **本 fork 已包含 0.2.1+ 宿主兼容热修（v1.1.71-hotfix）。** 上游 1.1.71 在 DeepSeek Harness 0.2.1+ 上会因 `{{cwd}}` 已被移除而每轮报 `unknown prompt variable`，且补丁 #40 失配导致「清洗没有写进全部宿主，已取消重启」。本仓库已修好这两处，并把「检查更新」与安装源指向本仓库。
->
-> 请**只用本仓库的 tarball 安装**（下方命令已改好），不要再指向 `ZXEB/dsh-purge`，否则会装回未修复的原版。改动清单、验证与回滚见 [`docs/HOTFIX-1.1.71.md`](docs/HOTFIX-1.1.71.md)。
+<a id="hotfix"></a>
 
+## 本 fork 修了什么（v1.1.71-hotfix）
+
+> 一句话：上游 1.1.71 在 **DeepSeek Harness 0.2.1+** 上「每一轮对话都起不来」、且「清洗无法完成重启」。本 fork 只修这几个兼容性故障，**没有增加任何新功能、新载荷，也不改模型、模型权重和 `reasoningEffort`**。
+
+### 你原本会遇到的三个症状
+
+| # | 现象（原文） | 根因 |
+|---|---|---|
+| 1 | `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"; registered variables: provider, model` | 宿主 0.2.1 起只注册 `provider` / `model`，插值遇到未知变量直接硬失败；而插件 bundle 把 `{{cwd}}` 写进了 `personaSuffix` |
+| 2 | `dsh-purge失败: 清洗没有写进全部宿主，已取消重启` | 宿主 assemble 段新增 `requiredContexts` 与带 `tools` 的 early return，补丁 #40 的 6 条 pattern 全部失配 → inject marker 写不进去 → 重启闸门 `ensureHostClean()` 拦下 |
+| 3 | 点一次「检查更新」后又变回坏版 | fork 后 `package.json` 已指向本仓库，但 `lib/update.js`、欢迎页链接、发布 workflow、README 里的命令仍硬编码上游 `ZXEB/dsh-purge` |
+
+症状 1 让用户完全没法对话，症状 2 让「清洗 → 应用」永远卡在闸门上，症状 3 会让前两个修复被一次更新悄悄覆盖。
+
+### 对应改了什么
+
+| 修复 | 落到哪些文件 |
+|---|---|
+| `{{cwd}}` 去变量化：改成静态文本 `the session workspace root`；插值白名单 `DSH_INTERPOLATE_ALLOWED` 从 `cwd/model/provider` 收窄为 `model/provider`（否则旧变量仍被当合法放过去） | `cordis.patch.yml`、`lib/identity.js`、`lib/core.js`、`presets/redteam/agent.cordis.yml` |
+| 补丁 #40 新增一条精确匹配 0.2.1+ assemble 原文的 `replacements[0]`：保留官方 `tools` / `requiredContexts` 语义，同时写回 `[dsh-purge] complete prompt keeps inject + agent-instructions` marker；**原 6 条保留在后，先命中者生效**，因此仍兼容 0.2.0-rc.2 | `lib/core.js` |
+| 重启闸门对齐上游 1.2.1：只是 soft-skip / pattern 未命中导致 marker 没写全时放行并带 `warnings`；真有 `failed` / `read_error` 或拿不到 apply 报告时仍然拦 | `lib/core.js` |
+| 更新源、安装源、欢迎页链接、发版守卫全部指向本仓库 | `lib/update.js`、`client.js`、`lib/redteam/ui.js`、`.github/workflows/release.yml`、三份 README |
+
+上游在插件 **1.2.0** 修 `{{cwd}}`、**1.2.1** 修重启闸门；这里是在 **1.1.71 上等价补齐**，不引入上游其它变动。`package.json` 的 `version` 仍是 `1.1.71`，避免误触发版本比较。
+
+### 修好之后你会看到
+
+- 新开一轮对话能正常回复，不再每轮 `unknown prompt variable`。
+- 清洗页点「应用」能走完并自动重启，不再弹「已取消重启」。
+- 「检查更新」只从本仓库取源码，热修不会被上游原版覆盖。
+
+### 怎么自己确认
+
+```bash
+node --check lib/core.js
+node --check lib/identity.js
+node scripts/verify-hotfix.mjs
+# 连带真实宿主匹配校验（路径换成自己的）
+node scripts/verify-hotfix.mjs --host "<DSH安装目录>/resources/app/dsh/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js"
+```
+
+只读、不改宿主。宿主升级后可复跑，用来判断补丁 #40 是否还匹配官方 assemble。
+
+### 生效顺序（必做）
+
+插件是宿主**启动时加载进内存**的，热修改的是插件源码，不是已运行的进程：**从托盘完全退出**（关窗口不算，Windows 下确认任务管理器无残留）→ 用本仓库 tarball 安装 → 重新打开 → 清洗页点「应用」→ 自动重启 → **新开一轮对话**（旧会话沿用旧上下文）。
+
+**请只从本仓库安装**（下方命令已改好），不要再指向 `ZXEB/dsh-purge`，否则会装回未修复的原版。完整改动清单、验证与回滚见 [`docs/HOTFIX-1.1.71.md`](docs/HOTFIX-1.1.71.md)。
 
 ## 目录
 
+- [本 fork 修了什么（v1.1.71-hotfix）](#hotfix)
 - [一、这是什么](#一这是什么)
 - [二、能力总览](#二能力总览)
 - [三、环境要求](#三环境要求)

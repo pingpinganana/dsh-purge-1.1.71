@@ -25,6 +25,11 @@
 
 ---
 
+> **This fork carries the 0.2.1+ host compatibility hotfix (v1.1.71-hotfix).** Upstream 1.1.71 fails on DeepSeek Harness 0.2.1+ with `unknown prompt variable "{{cwd}}"`, and patch #40 no longer matches the assemble block, which triggers "cleaning was not written to all hosts, restart cancelled". Both are fixed here; update checks and install sources now point at this repository.
+>
+> **Install only from this repository's tarball** (commands below are updated). Pointing at `ZXEB/dsh-purge` pulls the unfixed original back in. See [`docs/HOTFIX-1.1.71.md`](docs/HOTFIX-1.1.71.md) for the change list, verification and rollback.
+
+
 ## Contents
 
 - [1. What this is](#1-what-this-is)
@@ -132,10 +137,10 @@ Inside `profiles/<web|desktop>/package.json`, `"name"` must be `dsh-profile-web`
 
 ```powershell
 # Web host
-dsh plugin --profile web add https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz
+dsh plugin --profile web add https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz
 
 # Desktop host (quit the desktop client first)
-dsh plugin --profile desktop add https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz
+dsh plugin --profile desktop add https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz
 ```
 
 Same commands on macOS / Linux.
@@ -143,12 +148,12 @@ Same commands on macOS / Linux.
 Afterwards the profile `package.json` contains:
 
 ```json
-"dsh-purge": "https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz"
+"dsh-purge": "https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz"
 ```
 
 and `dsh.profile.bundles` ends with `"dsh-purge"`. **Both present = installed correctly.**
 
-> `repository / homepage / bugs / dsh.install` in `package.json` all point at `ZXEB/dsh-purge`, so the in-panel "check for updates" and repo links use this repository instead of the dead one.
+> `repository / homepage / bugs / dsh.install` in `package.json` all point at `pingpinganana/dsh-purge-1.1.71`, so the in-panel "check for updates" and repo links use this repository instead of the dead one.
 
 ---
 
@@ -178,10 +183,10 @@ Only touch the profile of the host you actually run.
 The folder must be named `dsh-purge`, and `package.json` inside it must have `"name": "dsh-purge"`.
 
 ```sh
-git clone https://github.com/ZXEB/dsh-purge.git "$DSH_HOME/plugins/dsh-purge"
+git clone https://github.com/pingpinganana/dsh-purge-1.1.71.git "$DSH_HOME/plugins/dsh-purge"
 ```
 
-No git: download [master.tar.gz](https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz), rename `dsh-purge-master` to `dsh-purge`, drop it into `plugins/`.
+No git: download [master.tar.gz](https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz), rename `dsh-purge-master` to `dsh-purge`, drop it into `plugins/`.
 
 **Step 2 — edit the profile `package.json` (back it up first)**
 
@@ -371,7 +376,7 @@ Applying (startup self-check or the Apply button) backs each target file up as `
 
 ```powershell
 dsh plugin --profile desktop remove dsh-purge
-dsh plugin --profile desktop add https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz
+dsh plugin --profile desktop add https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz
 # quit → reopen → Clean → Apply
 ```
 
@@ -416,7 +421,7 @@ Publishing a new version: bump `package.json`, put `# <version>` as the first li
 
 ## 12. Notice, attribution, license
 
-**Attribution (original author's terms):** if you borrow this project's name, ideas, code or prompts, you must credit the author and name the source. Original: **`YuJunZhiXue/dsh-purge` (author: 小杨)**. This repository is the v1.1.71 mirror rebuild: **`ZXEB/dsh-purge`**.
+**Attribution (original author's terms):** if you borrow this project's name, ideas, code or prompts, you must credit the author and name the source. Original: **`YuJunZhiXue/dsh-purge` (author: 小杨)**. Upstream mirror: **`ZXEB/dsh-purge`**; this repository is a fork: **`pingpinganana/dsh-purge-1.1.71`** (includes the 0.2.1+ compatibility hotfix).
 
 **Scope**
 

@@ -28,7 +28,8 @@
   config:
     includeHarnessIdentity: false
     personaPrefix: ""
-    personaSuffix: Your working directory is {{cwd}}.
+    # host 0.2.1+ only registers provider/model; the cwd template variable is a hard error.
+    personaSuffix: Your working directory is the session workspace root.
 
 - id: dsh-purge
   inject: [systemPrompt, tools]

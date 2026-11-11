@@ -1,3 +1,8 @@
+> **本 fork 已包含 0.2.1+ 宿主兼容热修（v1.1.71-hotfix）。** 上游 1.1.71 在 DeepSeek Harness 0.2.1+ 上会因 `{{cwd}}` 已被移除而每轮报 `unknown prompt variable`，且补丁 #40 失配导致「清洗没有写进全部宿主，已取消重启」。本仓库已修好这两处，并把「检查更新」与安装源指向本仓库。
+>
+> 请**只用本仓库的 tarball 安装**（下方命令已改好），不要再指向 `ZXEB/dsh-purge`，否则会装回未修复的原版。改动清单、验证与回滚见 [`docs/HOTFIX-1.1.71.md`](docs/HOTFIX-1.1.71.md)。
+
+
 <p align="center">
   <img src="docs/banner.svg" alt="dsh-purge" width="720">
 </p>
@@ -18,5 +23,5 @@
 
 ```powershell
 # 最短路径：装到桌面宿主
-dsh plugin --profile desktop add https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz
+dsh plugin --profile desktop add https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz
 ```

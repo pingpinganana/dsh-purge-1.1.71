@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository == 'ZXEB/dsh-purge'
+    if: github.repository == 'pingpinganana/dsh-purge-1.1.71'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,4 +62,4 @@ jobs:
           fi
           test -s "$zip"
           gh release upload "$tag" "$zip" --clobber
-          echo "published https://github.com/ZXEB/dsh-purge/releases/tag/${tag}"
+          echo "published https://github.com/pingpinganana/dsh-purge-1.1.71/releases/tag/${tag}"

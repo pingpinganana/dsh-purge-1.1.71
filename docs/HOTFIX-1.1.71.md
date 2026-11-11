@@ -26,7 +26,35 @@
 
 旧宿主的 6 条 pattern 全部保留在新条目之后，先命中者生效，因此**向下兼容 0.2.0-rc.2**。
 
-## 三、仓库自引用改动（重要）
+## 三、预设（模式）改动
+
+宿主 0.2.1 起，子会话的人格与工具面**不能再由 `dsh-tool-subagent` 行的 `toolFilter` / `persona` 决定**：
+`@deepseek-ai/dsh-tool-subagent` 对这两个字段直接抛 `is no longer supported; configure persona
+and tool plugins in an Agent Preset and select it with agentPreset (spawn only)`，**整个预设被标
+broken**（下拉里仍显示，选中后派活全废）。1.1.71 的红队预设正是这个写法，所以它在 0.2.1+ 上
+一直是坏的 —— `$DSH_HOME/redteam/preset-declare.json` 会记成 `phase: "registered-broken"`。
+
+| 改动 | 文件 |
+|---|---|
+| 委派行去掉 `toolFilter`，改写 `agentPreset: <id>-sub` + `allowedAgentPresets`（后者必须包含前者，否则宿主报 `agentPreset must be included in allowedAgentPresets`） | `presets/redteam/agent.cordis.yml`、`presets/unrestricted/agent.cordis.yml` |
+| 新增两个配套子预设：只挂执行工具，**一个委派工具都不挂**（`subagent` / `subagent_fork` / `workflow` / `ralph` 全无），也不挂 plan mode 与 goal（子会话没人批计划） | `presets/redteam-sub/`、`presets/unrestricted-sub/` |
+| 新增官方 `unrestricted` 预设（移植自社区仓库，按 0.2.1+ 机制改造，`order: 20`） | `presets/unrestricted/` |
+| 插件改为多预设：`bundledPresetIds()` 扫 `presets/`，`installPreset({ id })` 逐个落盘，`registerAll()` 全部注册并逐个回查 `broken`，状态写进 `preset-declare.json` 的 `presets` 数组 | `lib/redteam/index.js` |
+| 自愈：已存在的用户预设里的 `toolFilter` 块就地换成子预设写法（按缩进扫描，块后即使没有空行也不会误删下一行） | `lib/redteam/index.js` 的 `repairSubagentToolFilter()` |
+| 只读校验：四份预设是否可解析、`toolFilter` 是否清零、`agentPreset` 是否已声明、子预设是否真的没有委派工具 | `scripts/verify-presets.mjs` |
+
+四个预设及定位：
+
+| 模式 | id | order | 定位 |
+|---|---|---|---|
+| 红队模式 | `redteam` | 10 | 主会话指挥端：计划 / 派活 / 对账，自己不动手 |
+| 红队模式 · 子任务 | `redteam-sub` | 11 | 子会话执行端：角色职责由派活 prompt 的 `redteamRole:` 注入 |
+| 无限制模式 | `unrestricted` | 20 | 主会话：官方骨架，操作者意图优先 |
+| 无限制模式 · 子任务 | `unrestricted-sub` | 21 | 子会话执行档位 |
+
+锚点门（`anchor-gate.mjs` + bootstrap 限流）只给红队指挥端装，其它预设不再注入这一层。
+
+## 四、仓库自引用改动（重要）
 
 fork 之后 `package.json` 的 `repository / homepage / bugs / dsh.install` 已指向本仓库，但运行时代码与文档仍硬编码上游地址。如果不改，点一次「检查更新」就会从 `ZXEB/dsh-purge` 拉回**未修复**的 1.1.71，热修被覆盖。
 
@@ -41,7 +69,7 @@ fork 之后 `package.json` 的 `repository / homepage / bugs / dsh.install` 已�
 `package.json` 的 `version` 仍为 `1.1.71`，`release-notes.md` 首行仍为 `# 1.1.71`，避免触发版本比较与误判升级。
 若不想让 push 触发自动发版，把 `release.yml` 第 17 行的 `if:` 改回 `false` 即可。
 
-## 四、验证
+## 五、验证
 
 只读、不改宿主。在本仓库根目录执行：
 
@@ -49,7 +77,9 @@ fork 之后 `package.json` 的 `repository / homepage / bugs / dsh.install` 已�
 # 静态校验（不需要宿主）
 node --check lib/core.js
 node --check lib/identity.js
+node --check lib/redteam/index.js
 node scripts/verify-hotfix.mjs
+node scripts/verify-presets.mjs
 
 # 连带宿主匹配校验（把路径换成自己的）
 node scripts/verify-hotfix.mjs --host "<DSH安装目录>/resources/app/dsh/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js"
@@ -63,7 +93,7 @@ YAML 校验：
 python -c "import yaml,io; [yaml.compose(io.open(p,encoding='utf-8').read()) for p in ['cordis.patch.yml','presets/redteam/agent.cordis.yml']]; print('YAML OK')"
 ```
 
-## 五、安装 / 生效顺序
+## 六、安装 / 生效顺序
 
 插件由宿主**启动时加载进内存**，热修改的是插件源码，不是已运行的进程。
 
@@ -76,12 +106,12 @@ python -c "import yaml,io; [yaml.compose(io.open(p,encoding='utf-8').read()) for
 
 3. 重新打开客户端 → 清洗页点「应用」→ 自动重启 → **新开一轮对话**（旧会话沿用旧上下文）。
 
-## 六、回滚
+## 七、回滚
 
 - 只想回到上游 1.1.71：用 `ZXEB/dsh-purge` 的 tarball 重装，或直接还原下表 4 个文件的原始内容（本机留存 `.bak-20261111` 备份）。
 - 只想回到官方宿主：`dsh-purge --revert`，再按需卸载。
 - 注意：**从上游仓库点「检查更新」、或重装任意非本仓库的 tarball，都会覆盖这些改动。**
 
-## 七、边界
+## 八、边界
 
 本热修属于兼容性 bugfix，不包含 POC/EXP 知识库、攻击载荷或任何绕过能力增强。项目原有的授权与合规声明继续适用：仅限本机与有书面授权的靶场使用。

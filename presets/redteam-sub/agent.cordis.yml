@@ -1,0 +1,122 @@
+# The `redteam-sub` agent preset: 红队模式的配套子预设（执行角色）。
+#
+# 宿主 0.2.1 起 `dsh-tool-subagent` 不再接受 `toolFilter` / `persona`
+# （lib/index.js 直接抛 "toolFilter is no longer supported"，整个预设会变 broken）。
+# 子会话的工具面只能由「另一个 preset」决定，父预设 redteam 的委派行用
+# `agentPreset: redteam-sub` 指到这里。
+#
+# 设计取舍：
+#   · **不挂任何委派工具** —— subagent / subagent_fork / workflow / ralph 一个都没有，
+#     子会话天然是叶子节点，比 deny 更彻底，也不用再靠 maxDepth 兜底。
+#   · **不挂 anchor-gate** —— 它是给指挥端 bootstrap 阶段限流用的；执行角色是
+#     "派一次活、跑完回报"，限流会截断任务书。
+#   · **不挂 plan-mode / goal** —— 子会话没有人审批计划，plan mode 会卡住；
+#     goal 是跨轮续跑，执行角色一轮就该收敛。
+#   · **人设不是指挥** —— 指挥职责写在父预设的 persona 里；这里只声明执行者身份，
+#     具体角色职责（信息收集/资产梳理/漏洞发现/漏洞利用/内网渗透）由派活 prompt
+#     第一行的 `redteamRole: <code>` 注入到子会话系统提示词。
+#   · **保留 redteam-tools** —— 执行角色必须能落库（资产 / 漏洞 / 会话 / 攻击链），
+#     否则父会话"没落库 = 没发生"的对账会判它没做。
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    prefix: |
+      你是红队演练中的**执行角色**，由主会话的指挥智能体派活。任务书写在用户消息里，
+      第一行的 `redteamRole: <code>` 指明你的角色，按那份角色稿的职责边界执行。
+
+      - 只做本职：按任务书的范围执行，不擅自扩大目标，不交叉别的角色的职责。
+      - 你是叶子节点：不委派、不派生新智能体（你也拿不到任何委派工具）。
+      - 落库才算完成：资产、漏洞、会话、隧道都必须写进对应的 `redteam_*` 库；
+        报告里每条结论都要能对应到一条记录了 `tool` 与 `result` 的攻击步骤。
+      - 如实回报：区分「已拿到」与「待验证」，失败就写清卡在哪一步、试过什么。
+    suffix: ""
+
+- id: redteam-tools
+  name: dsh-purge/redteam/tools
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+# `shell-env` 留在宿主组合：它注入 DSH_WEB_URL / DSH_WEB_MODE，注入型服务必须
+# 在宿主层解析。执行器（bash-sandbox / pwsh-sandbox）同样是宿主层。
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+# 任务注册表在宿主平面，这里只挂模型侧的收集 / 停止控制。
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+# 执行角色要用红队技能（gogo-intranet / fscan-intranet / 各种工具链说明）。
+# 技能根顺序即优先级：$DSH_HOME/skills 在前，用户的配置不会被随包模板盖住。
+# includeDefaultRoots 关掉，避免把项目级大技能包一起吞进来污染上下文。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    includeDefaultRoots: false
+    customSkillDirs:
+      - !!js dshHomePath('skills')
+      - !!js dshHomePath('redteam/skills')
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+# 内网渗透这类长任务会把上下文撑满，压缩必须保留。`compaction-basic` 通过
+# `ctx.get` 读 `toolResultPrune`，所以修剪器要跟它同一个 realm。
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+# web 服务与搜索 provider 在宿主组合里，这里只挂模型侧工具。
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: true
+    searchTimeoutMs: 60000

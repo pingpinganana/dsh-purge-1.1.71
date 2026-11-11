@@ -1,0 +1,3 @@
+name: 红队模式 · 子任务
+description: 红队模式的配套子预设：只挂执行工具，不含任何委派工具（subagent / subagent_fork / workflow / ralph），子智能体因此天然是叶子节点。主会话请选择「红队模式」，不要直接选这个。
+order: 11

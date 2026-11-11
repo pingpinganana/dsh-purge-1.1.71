@@ -31,15 +31,16 @@
 
 > 一句话：上游 1.1.71 在 **DeepSeek Harness 0.2.1+** 上「每一轮对话都起不来」、且「清洗无法完成重启」。本 fork 只修这几个兼容性故障，**没有增加任何新功能、新载荷，也不改模型、模型权重和 `reasoningEffort`**。
 
-### 你原本会遇到的三个症状
+### 你原本会遇到的四个症状
 
 | # | 现象（原文） | 根因 |
 |---|---|---|
 | 1 | `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"; registered variables: provider, model` | 宿主 0.2.1 起只注册 `provider` / `model`，插值遇到未知变量直接硬失败；而插件 bundle 把 `{{cwd}}` 写进了 `personaSuffix` |
 | 2 | `dsh-purge失败: 清洗没有写进全部宿主，已取消重启` | 宿主 assemble 段新增 `requiredContexts` 与带 `tools` 的 early return，补丁 #40 的 6 条 pattern 全部失配 → inject marker 写不进去 → 重启闸门 `ensureHostClean()` 拦下 |
 | 3 | 点一次「检查更新」后又变回坏版 | fork 后 `package.json` 已指向本仓库，但 `lib/update.js`、欢迎页链接、发布 workflow、README 里的命令仍硬编码上游 `ZXEB/dsh-purge` |
+| 4 | 红队模式在下拉里看着正常，选中后派活全废（`preset-declare.json` 显示 `registered-broken`） | 宿主 0.2.1 起 `dsh-tool-subagent` 拒绝 `toolFilter` / `persona`，旧写法直接抛错，整个预设被标 broken |
 
-症状 1 让用户完全没法对话，症状 2 让「清洗 → 应用」永远卡在闸门上，症状 3 会让前两个修复被一次更新悄悄覆盖。
+症状 1 让用户完全没法对话，症状 2 让「清洗 → 应用」永远卡在闸门上，症状 3 会让前两个修复被一次更新悄悄覆盖，症状 4 让红队模式「看得见、用不了」。
 
 ### 对应改了什么
 
@@ -48,27 +49,46 @@
 | `{{cwd}}` 去变量化：改成静态文本 `the session workspace root`；插值白名单 `DSH_INTERPOLATE_ALLOWED` 从 `cwd/model/provider` 收窄为 `model/provider`（否则旧变量仍被当合法放过去） | `cordis.patch.yml`、`lib/identity.js`、`lib/core.js`、`presets/redteam/agent.cordis.yml` |
 | 补丁 #40 新增一条精确匹配 0.2.1+ assemble 原文的 `replacements[0]`：保留官方 `tools` / `requiredContexts` 语义，同时写回 `[dsh-purge] complete prompt keeps inject + agent-instructions` marker；**原 6 条保留在后，先命中者生效**，因此仍兼容 0.2.0-rc.2 | `lib/core.js` |
 | 重启闸门对齐上游 1.2.1：只是 soft-skip / pattern 未命中导致 marker 没写全时放行并带 `warnings`；真有 `failed` / `read_error` 或拿不到 apply 报告时仍然拦 | `lib/core.js` |
+| 子会话组合改用**子预设**：主预设的委派行删掉 `toolFilter`，改写 `agentPreset: <id>-sub` + `allowedAgentPresets`；新增 `redteam-sub` / `unrestricted-sub` 两个配套预设，一个委派工具都不挂，子会话天然是叶子节点 | `presets/*/agent.cordis.yml`、`presets/redteam-sub/`、`presets/unrestricted-sub/` |
+| 插件支持**多预设**：安装与注册改为扫 `presets/` 目录（`bundledPresetIds()`），`installPreset({ id })` 逐个落地，启动时 `registerAll()` 全部注册并逐个回查 `broken`；旧预设里的 `toolFilter` 由 `repairSubagentToolFilter()` 就地自愈 | `lib/redteam/index.js` |
 | 更新源、安装源、欢迎页链接、发版守卫全部指向本仓库 | `lib/update.js`、`client.js`、`lib/redteam/ui.js`、`.github/workflows/release.yml`、三份 README |
 
 上游在插件 **1.2.0** 修 `{{cwd}}`、**1.2.1** 修重启闸门；这里是在 **1.1.71 上等价补齐**，不引入上游其它变动。`package.json` 的 `version` 仍是 `1.1.71`，避免误触发版本比较。
+
+### 模式清单（下拉里会出现这四个）
+
+| 模式 | id | 定位 | 说明 |
+|---|---|---|---|
+| 红队模式 | `redteam` | 主会话 | 指挥端：只计划、派活、对账，自己不动手；派活走 `subagent`，子会话固定用 `redteam-sub` |
+| 红队模式 · 子任务 | `redteam-sub` | 子会话 | 执行端：一个委派工具都不挂，天然叶子节点；角色职责由派活 prompt 第一行的 `redteamRole: <code>` 注入 |
+| 无限制模式 | `unrestricted` | 主会话 | dsh-purge 官方骨架：操作者意图优先、不重复声明边界；工具面沿用标准集，闸门交给宿主补丁 |
+| 无限制模式 · 子任务 | `unrestricted-sub` | 子会话 | 同一人设基调，去掉委派、计划、目标三组，作为子智能体的执行档位 |
+
+`redteam` 是 1.1.71 原有的（但本次才修好），`redteam-sub` / `unrestricted` / `unrestricted-sub` 是本次新增。
+
+**「· 子任务」不要在主会话里直接选**：它没有任何委派工具，也没有 plan mode —— 那是有意为之（保证子会话是叶子）。主会话选它会得到"派不了活"的错觉。
 
 ### 修好之后你会看到
 
 - 新开一轮对话能正常回复，不再每轮 `unknown prompt variable`。
 - 清洗页点「应用」能走完并自动重启，不再弹「已取消重启」。
 - 「检查更新」只从本仓库取源码，热修不会被上游原版覆盖。
+- 模式下拉里出现四个模式，红队模式不再 `broken`，可以正常派活给五个执行角色。
+- `$DSH_HOME/redteam/preset-declare.json` 里 `ok` 为 `true`，`presets` 数组四项都不带 `broken`。
 
 ### 怎么自己确认
 
 ```bash
 node --check lib/core.js
 node --check lib/identity.js
+node --check lib/redteam/index.js
 node scripts/verify-hotfix.mjs
+node scripts/verify-presets.mjs
 # 连带真实宿主匹配校验（路径换成自己的）
 node scripts/verify-hotfix.mjs --host "<DSH安装目录>/resources/app/dsh/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js"
 ```
 
-只读、不改宿主。宿主升级后可复跑，用来判断补丁 #40 是否还匹配官方 assemble。
+只读、不改宿主。宿主升级后可复跑，用来判断补丁 #40 是否还匹配官方 assemble，以及四个预设是否仍然符合 0.2.x 的写法（`toolFilter` 已废弃、`agentPreset` 必须已声明）。
 
 ### 生效顺序（必做）
 

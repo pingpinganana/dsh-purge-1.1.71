@@ -31,15 +31,16 @@
 
 > In short: upstream 1.1.71 **cannot complete a single turn** on DeepSeek Harness 0.2.1+, and its Clean step always cancels the restart. This fork fixes only those compatibility failures — **no new features, no new payloads, no changes to the model, its weights, or `reasoningEffort`**.
 
-### The three symptoms you would hit
+### The four symptoms you would hit
 
 | # | Symptom (verbatim) | Root cause |
 |---|---|---|
 | 1 | `unknown prompt variable "{{cwd}}" in section "deployment:persona-suffix"; registered variables: provider, model` | Host 0.2.1+ registers only `provider` / `model` and hard-fails on unknown template variables, while the plugin bundle writes `{{cwd}}` into `personaSuffix` |
 | 2 | `dsh-purge failed: cleaning was not written to all hosts, restart cancelled` | The host assemble block gained `requiredContexts` and a `tools` early return, so all 6 patterns of patch #40 miss → inject marker is never written → the `ensureHostClean()` gate blocks the restart |
 | 3 | One "check for updates" silently brings the broken build back | After forking, `package.json` points here, but `lib/update.js`, the welcome links, the release workflow and the README commands still hard-code upstream `ZXEB/dsh-purge` |
+| 4 | Red-team mode looks fine in the dropdown, but delegation is dead (`preset-declare.json` says `registered-broken`) | Host 0.2.1+ rejects `toolFilter` / `persona` on `dsh-tool-subagent`; the old shape throws and the whole preset is marked broken |
 
-Symptom 1 makes every turn fail, symptom 2 makes Clean → Apply a dead end, and symptom 3 quietly undoes both fixes.
+Symptom 1 makes every turn fail, symptom 2 makes Clean → Apply a dead end, symptom 3 quietly undoes both fixes, and symptom 4 leaves red-team mode visible but unusable.
 
 ### What changed
 
@@ -48,27 +49,46 @@ Symptom 1 makes every turn fail, symptom 2 makes Clean → Apply a dead end, and
 | Remove `{{cwd}}` (static text `the session workspace root`) and narrow `DSH_INTERPOLATE_ALLOWED` from `cwd/model/provider` to `model/provider`, so the stale variable can no longer slip through | `cordis.patch.yml`, `lib/identity.js`, `lib/core.js`, `presets/redteam/agent.cordis.yml` |
 | Add `replacements[0]` to patch #40, matching the 0.2.1+ assemble source exactly: keeps the official `tools` / `requiredContexts` semantics and writes back the `[dsh-purge] complete prompt keeps inject + agent-instructions` marker. **The original 6 patterns remain after it** (first match wins), so 0.2.0-rc.2 stays supported | `lib/core.js` |
 | Align the restart gate with upstream 1.2.1: allow soft-skip / pattern-miss with `warnings`, still block on real `failed` / `read_error` or a missing apply report | `lib/core.js` |
+| Move child composition to **sub-presets**: the delegation row drops `toolFilter` and uses `agentPreset: <id>-sub` + `allowedAgentPresets`; `redteam-sub` / `unrestricted-sub` carry zero delegation tools, so children are leaves by construction | `presets/*/agent.cordis.yml`, `presets/redteam-sub/`, `presets/unrestricted-sub/` |
+| Support **multiple presets**: install and registration now scan `presets/` (`bundledPresetIds()`), `installPreset({ id })` lands each one, `registerAll()` declares them all at startup and re-reads `broken` per preset; an existing `toolFilter` is healed in place by `repairSubagentToolFilter()` | `lib/redteam/index.js` |
 | Point update source, install source, welcome links and release guard at this repository | `lib/update.js`, `client.js`, `lib/redteam/ui.js`, `.github/workflows/release.yml`, all three READMEs |
 
 Upstream fixed `{{cwd}}` in plugin **1.2.0** and the restart gate in **1.2.1**; this is the equivalent fix backported onto **1.1.71**, without pulling in any other upstream change. `package.json` still says `1.1.71` to avoid spurious version comparisons.
+
+### The four presets in the dropdown
+
+| Preset | id | Role | Notes |
+|---|---|---|---|
+| Red team | `redteam` | main session | Commander: plans, delegates and audits; never executes. Delegation goes through `subagent`, children are pinned to `redteam-sub` |
+| Red team · subtask | `redteam-sub` | child session | Executor: carries no delegation tool at all, so it is a leaf by construction; role duties come from `redteamRole: <code>` on the prompt's first line |
+| Unrestricted | `unrestricted` | main session | The official dsh-purge skeleton: operator intent first, no repeated boundary statements; standard tool surface, gates left to the host patches |
+| Unrestricted · subtask | `unrestricted-sub` | child session | Same persona baseline, minus delegation, plan mode and goals — the executor profile for child agents |
+
+`redteam` shipped with 1.1.71 (and only works after this hotfix); the other three are new here.
+
+**Do not pick a "· subtask" preset for the main session** — it deliberately has no delegation tool and no plan mode, which is exactly what keeps children from spawning grandchildren.
 
 ### After the fix you should see
 
 - A new conversation replies normally — no more `unknown prompt variable` on every turn.
 - Clean → Apply completes and restarts instead of showing "restart cancelled".
 - "Check for updates" only fetches from this repository, so the hotfix cannot be overwritten by upstream.
+- Four presets in the dropdown, red-team mode no longer `broken`, and delegation to the five executor roles works again.
+- `$DSH_HOME/redteam/preset-declare.json` reports `ok: true` with four entries and no `broken` field.
 
 ### Verify it yourself
 
 ```bash
 node --check lib/core.js
 node --check lib/identity.js
+node --check lib/redteam/index.js
 node scripts/verify-hotfix.mjs
+node scripts/verify-presets.mjs
 # also simulate the patch against the real host (adjust the path)
 node scripts/verify-hotfix.mjs --host "<DSH install>/resources/app/dsh/node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js"
 ```
 
-Read-only; the host is not modified. Re-run after a host upgrade to check whether patch #40 still matches.
+Read-only; the host is not modified. Re-run after a host upgrade to check whether patch #40 still matches, and whether the four presets still follow the 0.2.x rules (`toolFilter` is gone, every `agentPreset` is declared).
 
 ### Activation order (required)
 

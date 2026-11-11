@@ -56,11 +56,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ZXEB/dsh-purge.git"
+    "url": "git+https://github.com/pingpinganana/dsh-purge-1.1.71.git"
   },
-  "homepage": "https://github.com/ZXEB/dsh-purge#readme",
+  "homepage": "https://github.com/pingpinganana/dsh-purge-1.1.71#readme",
   "bugs": {
-    "url": "https://github.com/ZXEB/dsh-purge/issues"
+    "url": "https://github.com/pingpinganana/dsh-purge-1.1.71/issues"
   },
   "dsh": {
     "bundle": {
@@ -78,9 +78,9 @@
     },
     "install": {
       "preferred": "tarball",
-      "tarball": "https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.tar.gz",
-      "zip": "https://github.com/ZXEB/dsh-purge/archive/refs/heads/master.zip",
-      "git": "https://github.com/ZXEB/dsh-purge.git"
+      "tarball": "https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.tar.gz",
+      "zip": "https://github.com/pingpinganana/dsh-purge-1.1.71/archive/refs/heads/master.zip",
+      "git": "https://github.com/pingpinganana/dsh-purge-1.1.71.git"
     }
   },
   "publishConfig": {
